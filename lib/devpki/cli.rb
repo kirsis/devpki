@@ -1,9 +1,4 @@
 require 'devpki'
+require 'thor'
 
-module DevPKI
-  class CLI
-    def self.start(*)
-      puts "Starting CLI"
-    end
-  end
-end
+Dir["lib/devpki/cli/*.rb"].each {|file| require file[4..-1] }
