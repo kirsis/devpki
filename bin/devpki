@@ -2,5 +2,5 @@
 
 require 'devpki'
 
-puts "Nothing here yet ..."
+DevPKI::CLI.start
 
