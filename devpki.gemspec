@@ -5,11 +5,11 @@ require 'devpki/version'
 
 Gem::Specification.new do |spec|
   spec.name          = "devpki"
-  spec.version       = Devpki::VERSION
-  spec.authors       = ["Jānis Kiršteins"]
+  spec.version       = DevPKI::VERSION
+  spec.authors       = ["Jānis Kiršteins"]
   spec.email         = ["janis@montadigital.com"]
-  spec.description   = %q{TODO: Write a gem description}
-  spec.summary       = %q{TODO: Write a gem summary}
+  spec.description   = "Tool for doing common PKI-related tasks"
+  spec.summary       = "Tool for doing common PKI-related tasks"
   spec.homepage      = ""
   spec.license       = "MIT"
 

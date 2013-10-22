@@ -1,5 +1,5 @@
 require "devpki/version"
 
-module Devpki
+module DevPKI
   # Your code goes here...
 end

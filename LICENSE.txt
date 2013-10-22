@@ -1,4 +1,4 @@
-Copyright (c) 2013 Jānis Kiršteins
+Copyright (c) 2013 Jānis Kiršteins
 
 MIT License
 
