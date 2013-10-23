@@ -1,4 +1,5 @@
 require 'devpki'
+require 'thor'
 
 module DevPKI
   module SUBCLI

@@ -1,8 +1,9 @@
 #!/usr/bin/env ruby
 
 require 'devpki'
+require 'devpki/data_directory'
 
-if ((/darwin/ =~ RUBY_PLATFORM) == nil)
+if not DevPKI::DataDirectory::platform_supported?
   puts "ERROR: currently only OS X is supported. The application will now terminate."
   abort
 end
