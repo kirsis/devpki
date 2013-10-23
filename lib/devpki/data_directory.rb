@@ -1,4 +1,5 @@
 require 'devpki'
+require 'fileutils'
 
 Dir["lib/devpki/cli/**/*.rb"].each {|file| require file[4..-1] }
 
@@ -8,6 +9,11 @@ module DevPKI
     # Only support OSX atm
     def self.platform_supported?
       (/darwin/ =~ RUBY_PLATFORM) != nil
+    end
+
+    def self.reset_to_empty
+      FileUtils.rm_rf(self.absolute_path)
+      self.get
     end
 
     def self.absolute_path
