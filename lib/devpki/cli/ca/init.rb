@@ -24,12 +24,6 @@ module DevPKI
       option :"parent-ca", :banner => "<id>", :desc => "ID of the parent CA. If ommitted, the CA will be created as a root CA"
 
       def init(id=0)
-        puts "Creating CA with ID #{id}"
-        puts "Optional: name = #{options[:name]}" if options[:name]
-        puts "Optional: parent-ca-id = #{options[:"parent-ca"]}" if options[:"parent-ca"]
-
-        puts "------"
-
         DevPKI::CA.init(id, options[:name], options[:"parent-ca"])
       end
     end
