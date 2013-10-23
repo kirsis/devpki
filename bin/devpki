@@ -2,5 +2,10 @@
 
 require 'devpki'
 
+if ((/darwin/ =~ RUBY_PLATFORM) == nil)
+  puts "ERROR: currently only OS X is supported. The application will now terminate."
+  abort
+end
+
 DevPKI::CLI.start
 
