@@ -19,8 +19,9 @@ module DevPKI
 
     # Initializes an empty CA database and generates a certificate for self
     def self.init(id=0, name=nil, parent_ca_id=nil)
-      raise InvalidOption.new("CA with ID #{id} already exists!") if self.exists?
-      raise Error.new("Parent CAs not supported yet") if parent_ca_id != nil;
+
+      raise InvalidOption.new("CA with ID #{id} already exists!") if self.exists?(id)
+      raise InvalidOption.new("Parent CA with ID #{id} does not exist!") if parent_ca_id != nil and not self.exists?(parent_ca_id)
 
       db = SQLite3::Database.new(self.db_path(id))
 
@@ -41,23 +42,46 @@ module DevPKI
 
       db.execute_batch(sql)
 
+      if parent_ca_id != nil
+        raise InvalidOption.new("Parent CA with ID #{id} does not exist!") if not self.exists?(parent_ca_id)
+        puts "Exists: #{self.exists?(parent_ca_id)}"
+        parent_db = SQLite3::Database.open(self.db_path(parent_ca_id))
+
+        parent_ca_raw = parent_db.get_first_value( "select pem from certificates" )
+        parent_key_raw = parent_db.get_first_value( "select pem from private_keys" )
+
+        parent_ca_cert = OpenSSL::X509::Certificate.new parent_ca_raw
+        parent_ca_key = OpenSSL::PKey::RSA.new parent_key_raw
+      end
+
       key = OpenSSL::PKey::RSA.new(2048)
       public_key = key.public_key
 
       name ||= "Generic DevPKI CA ##{id}"
-      subject = "/CN=#{name}}"
+      subject = "/CN=#{name}"
 
       cert = OpenSSL::X509::Certificate.new
-      cert.subject = cert.issuer = OpenSSL::X509::Name.parse(subject)
+      cert.subject = OpenSSL::X509::Name.parse(subject)
+      if parent_ca_id == nil
+        cert.issuer = cert.subject
+      else
+        cert.issuer = parent_ca_cert.subject
+      end
       cert.not_before = Time.now
-      cert.not_after = Time.now + 365 * 24 * 60 * 60
+      cert.not_after = Time.now + 2 * 365 * 24 * 60 * 60
       cert.public_key = public_key
-      cert.serial = 0x1
+      cert.serial = Random.rand(1..100000)
       cert.version = 2
 
       ef = OpenSSL::X509::ExtensionFactory.new
       ef.subject_certificate = cert
-      ef.issuer_certificate = cert
+
+      if parent_ca_id == nil
+        ef.issuer_certificate = cert
+      else
+        ef.issuer_certificate = parent_ca_cert
+      end
+
       cert.extensions = [
         ef.create_extension("basicConstraints","CA:TRUE", true),
         ef.create_extension("subjectKeyIdentifier", "hash"),
@@ -65,7 +89,11 @@ module DevPKI
       cert.add_extension ef.create_extension("authorityKeyIdentifier",
                                              "keyid:always,issuer:always")
 
-      cert.sign key, OpenSSL::Digest::SHA1.new
+      if parent_ca_id == nil
+        cert.sign key, OpenSSL::Digest::SHA512.new
+      else
+        cert.sign parent_ca_key, OpenSSL::Digest::SHA512.new
+      end
 
       db.execute( "INSERT INTO private_keys (pem) VALUES ( ? )", key.to_pem )
       private_key_id = db.last_insert_row_id
