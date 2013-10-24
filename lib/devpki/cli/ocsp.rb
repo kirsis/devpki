@@ -1,5 +1,6 @@
 require 'devpki'
 require 'thor'
+require 'net/http'
 
 module DevPKI
   class CLI < Thor
@@ -50,6 +51,69 @@ module DevPKI
       method = options[:method].upcase
       raise InvalidOption.new("GET method not implemented yet.") if method == "GET"
 
+      ###### -------------- move this to DevPKI::OCSP
+
+      cert_ids = []
+      store = OpenSSL::X509::Store.new
+
+      ca_subj_map.each_pair do |ca_file, subj_file_list|
+        ca_cert = OpenSSL::X509::Certificate.new File.read(ca_file)
+        store.add_cert(ca_cert)
+
+        subj_file_list.each do |subj_file|
+          subj_cert = OpenSSL::X509::Certificate.new File.read(subj_file)
+
+          cert_ids << OpenSSL::OCSP::CertificateId.new(subj_cert, ca_cert)
+        end
+      end
+
+      request = OpenSSL::OCSP::Request.new
+      cert_ids.each do |cert_id|
+        request.add_certid(cert_id)
+      end
+
+      request_uri = URI(options[:uri])
+
+      http_req = Net::HTTP::Post.new(request_uri.path)
+      http_req.content_type = "application/ocsp-request"
+      http_req.body = request.to_der
+
+      http_response = Net::HTTP.new(request_uri.host, request_uri.port).start do |http|
+        http.request(http_req)
+      end
+
+      ## ----
+
+      if http_response.code != "200"
+        raise StandardError, "Invalid response code from OCSP responder: #{http_response.code}"
+      end
+
+      response = OpenSSL::OCSP::Response.new(http_response.body)
+      puts "Status: #{response.status}"
+      puts "Status string: #{response.status_string}"
+
+      if response.status != 0
+        raise StandardError, "Not a successful status"
+      end
+      if response.basic[0][0].serial != cert.serial
+        raise StandardError, "Not the same serial"
+      end
+      if response.basic[0][1] != 0 # 0 is good, 1 is revoked, 2 is unknown.
+        raise StandardError, "Not a good status"
+      end
+      current_time = Time.now
+      if response.basic[0][4] > current_time or response.basic[0][5] < current_time
+        raise StandardError, "The response is not within its validity window"
+      end
+
+      # we also need to verify that the OCSP response is signed by
+      # a certificate that is allowed and chains up to a trusted root.
+      # To do this you'll need to build an OpenSSL::X509::Store object
+      # that contains the certificate you're checking + intermediates + root.
+
+      if response.basic.verify([],store) != true
+        raise StandardError, "Response not signed by a trusted certificate"
+      end
 
     end
   end
