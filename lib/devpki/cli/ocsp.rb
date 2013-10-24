@@ -3,12 +3,28 @@ require 'thor'
 
 module DevPKI
   class CLI < Thor
-    desc "ocsp [--method=get|post] --uri=<ocsp uri> ISSUER_CER_FILE:SUBJECT_CER_FILE...", "This command verifies certificates using OCSP"
+    desc "ocsp [--method=get|post] --uri=<ocsp uri> ISSUER_CER_FILE:SUBJ_A.CER[,SUBJ_B.CER...]...", "Performs an OCSP query"
+    long_desc <<-LONGDESC
+        This command performs an OCSP query against the given OCSP URI, over HTTP. To perform
+        a query, at least 2 certificates are needed - the CA certificate and the subject certificate
+        file that is to be checked for revocation.
 
+        Only HTTP POST method is supported at the moment (RFC 2560).
+
+        EXAMPLE:
+
+        To test subj_a.cer (issuer certificate ca.cer) against http://ocsp.ca.com:
+
+        > $ devpki ocsp --uri=http://ocsp.ca.com ca.cer:subj_a.cer
+
+
+    LONGDESC
     option :method, :default => "post", :banner => "get|post", :desc => "Method to use. GET as per RFC5019, or POST as per RFC2560. Defaults to POST."
     option :uri, :banner => "<ocsp uri>", :required => true, :desc => "OCSP responder URI."
 
     def ocsp(*cer_files)
+
+      raise InvalidOption.new("Please specify at least one CA and subject certificate file.") if cer_files.empty?
 
       ca_subj_map = {}
       cer_files.each do |ca_subj_pair|
