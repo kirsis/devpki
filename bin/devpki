@@ -4,9 +4,9 @@ require 'devpki'
 require 'devpki/data_directory'
 
 if not DevPKI::DataDirectory::platform_supported?
-  puts "ERROR: currently only OS X is supported. The application will now terminate."
+  puts "ERROR: currently only #{DevPKI::DataDirectory.supported_operating_systems} is supported. You are running on #{DevPKI::DataDirectory.os}. The application will now terminate."
   abort
 end
-
-DevPKI::CLI.start
+puts DevPKI::DataDirectory.absolute_path
+#DevPKI::CLI.start
 
