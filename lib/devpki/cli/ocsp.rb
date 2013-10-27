@@ -1,10 +1,11 @@
 require 'devpki'
 require 'thor'
 require 'net/http'
+require 'pry'
 
 module DevPKI
   class CLI < Thor
-    desc "ocsp [--method=get|post] --uri=<ocsp uri> ISSUER_CER_FILE:SUBJ_A.CER[,SUBJ_B.CER...]...", "Performs an OCSP query"
+    desc "ocsp [--method=get|post] --uri=<ocsp uri> [--chain-certs=ca1.cer,ca2.cer...] ISSUER_CER_FILE:SUBJ_A.CER[,SUBJ_B.CER...]...", "Performs an OCSP query"
     long_desc <<-LONGDESC
         This command performs an OCSP query against the given OCSP URI, over HTTP. To perform
         a query, at least 2 certificates are needed - the CA certificate and the subject certificate
@@ -22,13 +23,20 @@ module DevPKI
     LONGDESC
     option :method, :default => "post", :banner => "get|post", :desc => "Method to use. GET as per RFC5019, or POST as per RFC2560. Defaults to POST."
     option :uri, :banner => "<ocsp uri>", :required => true, :desc => "OCSP responder URI."
+    option :"chain-certs", :banner => "ca1.cer,ca2.cer...", :desc => "Trusted certificates that can be used, when verifying OCSP response signature."
 
     def ocsp(*cer_files)
 
       raise InvalidOption.new("Please specify at least one CA and subject certificate file.") if cer_files.empty?
 
+      chain_cert_files = []
+      if options[:"chain-certs"] != nil
+        chain_cert_files=options[:"chain-certs"].split(",")
+      end
+
       ca_subj_map = {}
       cer_files.each do |ca_subj_pair|
+
         raise InvalidOption.new("\"#{ca_subj_pair}\" is an invalid CA and subject pair. Please pass a pair with format similar to \"ca.cer:a.cer[,b.cer...]\"") if not ca_subj_pair.include?(":")
 
         ca_subjlist_split = ca_subj_pair.split(":")
@@ -55,6 +63,12 @@ module DevPKI
 
       cert_ids = []
       store = OpenSSL::X509::Store.new
+      chain_cert_files.each do |chain_cert_file|
+        puts "Adding #{chain_cert_file} to store"
+        store.add_file(chain_cert_file)
+      end
+      #store.set_default_paths
+      #store.add_file("root.crt")
 
       ca_subj_map.each_pair do |ca_file, subj_file_list|
         ca_cert = OpenSSL::X509::Certificate.new File.read(ca_file)
@@ -73,6 +87,7 @@ module DevPKI
       end
 
       request_uri = URI(options[:uri])
+      request_uri.path = "/" if request_uri.path.to_s.empty?
 
       http_req = Net::HTTP::Post.new(request_uri.path)
       http_req.content_type = "application/ocsp-request"
@@ -92,26 +107,61 @@ module DevPKI
       puts "Status: #{response.status}"
       puts "Status string: #{response.status_string}"
 
+      # Statuses from http://tools.ietf.org/html/rfc2560 section 4.2.1
+      #
+      # successful            (0),  --Response has valid confirmations
+      # malformedRequest      (1),  --Illegal confirmation request
+      # internalError         (2),  --Internal error in issuer
+      # tryLater              (3),  --Try again later
+      #                             --(4) is not used
+      # sigRequired           (5),  --Must sign the request
+      # unauthorized          (6)   --Request unauthorized
       if response.status != 0
         raise StandardError, "Not a successful status"
       end
-      if response.basic[0][0].serial != cert.serial
-        raise StandardError, "Not the same serial"
-      end
-      if response.basic[0][1] != 0 # 0 is good, 1 is revoked, 2 is unknown.
-        raise StandardError, "Not a good status"
-      end
-      current_time = Time.now
-      if response.basic[0][4] > current_time or response.basic[0][5] < current_time
-        raise StandardError, "The response is not within its validity window"
-      end
 
-      # we also need to verify that the OCSP response is signed by
-      # a certificate that is allowed and chains up to a trusted root.
-      # To do this you'll need to build an OpenSSL::X509::Store object
-      # that contains the certificate you're checking + intermediates + root.
+      # response.basic.status will be populated, if response.status == 0
+      cert_ids.each_with_index do |cert_id,ix|
+
+        # SingleResponse structure from http://tools.ietf.org/html/rfc2560 section 4.2.1
+        #
+        # SingleResponse ::= SEQUENCE {
+        # certID                       CertID,
+        # certStatus                   CertStatus,
+        # thisUpdate                   GeneralizedTime,
+        # nextUpdate         [0]       EXPLICIT GeneralizedTime OPTIONAL,
+        # singleExtensions   [1]       EXPLICIT Extensions OPTIONAL }
+        # single_response = response.basic.status[ix]
+
+        # Find the single response that matches current cert_id
+        single_response = nil
+        response.basic.status.each do |single_response_candidate|
+          if single_response_candidate[0].serial.to_s == cert_id.serial.to_s
+            single_response = single_response_candidate
+            break
+          end
+        end
+
+        raise StandardError.new("SingleResponse for certificate s/n ##{cert_id.serial.to_s} not found.") if single_response == nil
+
+        # CertStatus from from http://tools.ietf.org/html/rfc2560 section 4.2.1
+        #
+        # CertStatus ::= CHOICE {
+        # good        [0]     IMPLICIT NULL,
+        # revoked     [1]     IMPLICIT RevokedInfo,
+        # unknown     [2]     IMPLICIT UnknownInfo }
+        if single_response[1] != 0
+          raise StandardError, "CertStatus for cert s/n #{cert_id.serial.to_s} is #{single_response[1]}"
+        end
+
+        current_time = Time.now
+        if single_response[4] > current_time or single_response[5] < current_time
+          raise StandardError, "The response for cert_id s/n #{cert_id.serial.to_s} is not within its validity window"
+        end
+      end
 
       if response.basic.verify([],store) != true
+        binding.pry
         raise StandardError, "Response not signed by a trusted certificate"
       end
 
